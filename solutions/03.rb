@@ -94,7 +94,7 @@ module Discount
 end
 
 module Coupon
-  def self.build name, hash
+  def self.build name,hash
     type = hash.to_a.flatten.first
     value = hash.to_a.flatten.last.to_s.to_d
     case type
@@ -144,7 +144,62 @@ module Coupon
   end
 end
 
+class InvoicePrinter
+  def initialize(cart)
+    @cart = cart
+  end
+
+  def to_s
+    @output = ""
+    print_header
+    print_items
+    print_total
+  end
+
+  private
+  def print_header
+    print_separator
+    print 'Name', 'qty', 'price'
+    print_separator
+  end
+
+  def print_items
+    @cart.items.each_key do |item|
+      print item, @cart.items[item], amount(@cart.item_price(item) * @cart.items[item])
+      if @cart.item_discount(item).nonzero?
+        discount_price = @cart.item_discount(item)
+        print "  #{@cart.discount_name(item)}", '', amount(discount_price)
+      end
+    end
+
+    if @cart.coupon != nil 
+      print @cart.coupon, '', amount(@cart.total - @cart.total(false))
+    end
+  end
+
+  def print_total
+    print_separator
+    print 'TOTAL', '', amount(@cart.total)
+    print_separator
+  end
+
+  def print_separator
+    @output << "+#{'-'*48}+#{'-'*10}+\n"
+  end
+
+  def print(*args)
+    @output << "| %-40s %5s | %8s |\n" % args 
+  end
+
+  def amount(decimal)
+    #"%5.2f" % decimal
+    sprintf("%.2f", decimal)
+  end
+end
+
 class Cart
+  attr_reader :items, :coupon
+
   def initialize inv
     @inventory = inv
     @items = Hash.new(0)
@@ -162,11 +217,11 @@ class Cart
 
   def item_discount name
     discount = @inventory.item_discount name
-    if discount != nil
-      (@inventory.item_discount name).discount(item_price(name), @items[name])
-    else
-      0
-    end
+    (@inventory.item_discount name).discount(item_price(name), @items[name])
+  end
+
+  def discount_name name
+    @inventory.item_discount(name).to_s
   end
 
   def total usecoupons=true
@@ -183,43 +238,7 @@ class Cart
   end
 
   def invoice
-    ret = "+#{'-'*48}+#{'-'*10}+\n"
-    ret << "| #{'Name'.ljust 23}#{'qty'.rjust 23} |#{'price'.rjust 9} |\n"
-    ret << "+#{'-'*48}+#{'-'*10}+\n"
-    ret << invoice_for_each_item
-    ret << invoice_for_coupon if @coupon != nil
-    ret << "+#{'-'*48}+#{'-'*10}+\n"
-    ret << "| #{'TOTAL'.ljust 46} |#{sprintf('%.2f',total).rjust 9} |\n"
-    ret << "+#{'-'*48}+#{'-'*10}+\n"
-  end
-
-  def invoice_for_each_item
-    res = ""
-    @items.each_key do |key|
-      quantity = sprintf("%d", @items[key])
-      price = sprintf("%.2f", item_price(key) * @items[key])
-      res << "| #{key.ljust 23}#{quantity.rjust 23} |#{price.rjust 9} |\n"
-      res << invoice_for_discount(key)
-    end
-    res
-  end
-
-  def invoice_for_discount name
-    res = ""
-    discount_desc = @inventory.item_discount(name).to_s
-    if discount_desc != ''
-      discount = @inventory.item_discount(name).discount(item_price(name), @items[name])
-      discount_string = sprintf('%.2f', discount)
-      res << "|   #{discount_desc.ljust 44} |#{discount_string.rjust 9} |\n"
-    end
-    res
-  end
-
-  def invoice_for_coupon
-    if @coupon != nil
-      coupon_discount = sprintf("%.2f", total - total(false))
-      "| #{@coupon.to_s.ljust 46} |#{coupon_discount.rjust 9} |\n"
-    end
+    InvoicePrinter.new(self).to_s
   end
 
   def use name
@@ -242,7 +261,7 @@ class Inventory
                           or numeric_price > '999.99'.to_d
     raise "Item already registred" if @items[name] != nil
     @items[name] = price.to_d
-    @discounts[name] = Discount.build discounts_hash 
+    @discounts[name] = Discount.build discounts_hash
   end
 
   def register_coupon name, value
