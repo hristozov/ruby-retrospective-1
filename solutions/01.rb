@@ -22,11 +22,7 @@ class Array
   end
 
   def subarray_count(subarray)
-   result = 0
-   (0...self.size).each do |i|
-     result +=1 if self[i...i+subarray.size] == subarray
-   end
-   result
+    each_cons(subarray.length).count(subarray)
   end
   
 end
