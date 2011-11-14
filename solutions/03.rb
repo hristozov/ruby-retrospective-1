@@ -16,74 +16,8 @@ class SuffixUtil
   end
 end
 
-class BaseDiscount
-  def get_lambda value, quantity
-    raise "This should be overriden"
-  end
-
-  def to_s
-    raise "This should be overriden"
-  end
-end
-
-class GetOneFreeDiscount < BaseDiscount
-  def initialize items_count
-    @items_count = items_count
-  end
-
-  def get_lambda item_price
-    lambda do |quantity|
-      -(quantity / @items_count) * (item_price)
-    end
-  end
-
-  def to_s
-    "(buy #{@items_count-1}, get 1 free)"
-  end
-end
-
-class ThresholdDiscount < BaseDiscount
-  def initialize max_items, discount_percent
-    @max_items = max_items
-    @discount_percent = discount_percent
-  end
-
-  def get_lambda item_price
-    lambda do |quantity|
-      if quantity >= @max_items
-        -(quantity - @max_items) * item_price * (@discount_percent / 100.0)
-      else
-        0
-      end
-    end
-  end
-
-  def to_s
-    suffix = SuffixUtil.get_suffix(@max_items)
-    "(#{@discount_percent}% off of every after the #{@max_items}#{suffix})"
-  end
-end
-
-class PackageDiscount < BaseDiscount
-  def initialize num_of_items, discount_percent
-    @num_of_items = num_of_items
-    @discount_percent = discount_percent
-  end
-
-  def get_lambda item_price
-    lambda do |quantity|
-      amount = quantity / @num_of_items
-      -amount * @num_of_items * item_price * (@discount_percent / 100.0)
-    end
-  end
-
-  def to_s
-    "(get #{@discount_percent}% off for every #{@num_of_items})"
-  end
-end
-
-class DiscountsFactory
-  def self.get_discount hash
+module Discount
+  def self.build hash
     type = hash.to_a.flatten.first
     value = hash.to_a.flatten.last
     case type
@@ -95,6 +29,62 @@ class DiscountsFactory
       ThresholdDiscount.new(value.to_a.flatten.first, value.to_a.flatten.last)
     else
       nil
+    end
+  end
+
+  class GetOneFreeDiscount
+    def initialize items_count
+      @items_count = items_count
+    end
+
+    def get_lambda item_price
+      lambda do |quantity|
+        -(quantity / @items_count) * (item_price)
+      end
+    end
+
+    def to_s
+      "(buy #{@items_count-1}, get 1 free)"
+    end
+  end
+
+  class ThresholdDiscount
+    def initialize max_items, discount_percent
+      @max_items = max_items
+      @discount_percent = discount_percent
+    end
+
+    def get_lambda item_price
+      lambda do |quantity|
+        if quantity >= @max_items
+          -(quantity - @max_items) * item_price * (@discount_percent / 100.0)
+        else
+          0
+        end
+      end
+    end
+
+    def to_s
+      suffix = SuffixUtil.get_suffix(@max_items)
+      "(#{@discount_percent}% off of every after the #{@max_items}#{suffix})"
+    end
+  end
+
+  class PackageDiscount
+    def initialize num_of_items, discount_percent
+      @num_of_items = num_of_items
+      @discount_percent = discount_percent
+    end
+
+    def get_lambda item_price
+      lambda do |quantity|
+        amount = quantity / @num_of_items
+        -amount * @num_of_items * item_price * (@discount_percent / 100.0)
+      end
+    end
+
+    def to_s
+      "(get #{@discount_percent}% off for every #{@num_of_items})"
     end
   end
 end
@@ -109,7 +99,7 @@ module Coupon
     when :amount
       AmountCoupon.new(name, value)
     else
-      nil
+      NilCoupon.new
     end
   end
 
@@ -119,10 +109,8 @@ module Coupon
       @name = name
     end
 
-    def get_lambda
-      lambda do |total|
-        -total * (@percent / 100.0)
-      end
+    def discount(total)
+      (@percent / '100.0'.to_d) * total
     end
 
     def to_s
@@ -136,14 +124,18 @@ module Coupon
       @name = name
     end
 
-    def get_lambda
-      lambda do |total|
-        -@amount
-      end
+    def discount(total)
+      [total, @amount].min
     end
-
+    
     def to_s
       "Coupon #{@name} - #{sprintf("%.2f", @amount)} off"
+    end
+  end
+
+  class NilCoupon
+    def discount(total)
+      0
     end
   end
 end
@@ -180,7 +172,7 @@ class Cart
       result += item_discount key
     end
     if usecoupons 
-      result += @coupon.get_lambda.call(result) if @coupon != nil
+      result -= @coupon.discount(result) if @coupon != nil
       result = result < 0 ? 0 : result
     end
     result
@@ -246,7 +238,7 @@ class Inventory
                           or numeric_price > '999.99'.to_d
     raise "Item already registred" if @items[name] != nil
     @items[name] = price.to_d
-    @discounts[name] = DiscountsFactory.get_discount discounts_hash 
+    @discounts[name] = Discount.build discounts_hash 
   end
 
   def register_coupon name, value
