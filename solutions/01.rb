@@ -1,23 +1,18 @@
 class Array
 
   def to_hash
-    self.inject({}) do |result, item|
-      result[item[0]] = item[1]
-      result
-    end
+    result = {}
+    each {|item| result[item[0]] = item[1]}
+    result
   end
 
   def index_by
-    self.inject({}) do
-      |result, item| result[yield item] = item
-      result
-    end
+    map{ |n| [yield(n), n] }.to_hash
   end
 
   def occurences_count
-    self.inject(Hash.new(0)) do |result, item|
-      result[item] += 1
-      result
+    Hash.new(0).tap do |result|
+      each{ |item| result[item] += 1}
     end
   end
 
