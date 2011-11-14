@@ -28,7 +28,7 @@ module Discount
     when :threshold
       ThresholdDiscount.new(value.to_a.flatten.first, value.to_a.flatten.last)
     else
-      nil
+      NilDiscount.new
     end
   end
 
@@ -37,10 +37,8 @@ module Discount
       @items_count = items_count
     end
 
-    def get_lambda item_price
-      lambda do |quantity|
-        -(quantity / @items_count) * (item_price)
-      end
+    def discount price, quantity
+      -(quantity / @items_count) * price
     end
 
     def to_s
@@ -54,14 +52,12 @@ module Discount
       @discount_percent = discount_percent
     end
 
-    def get_lambda item_price
-      lambda do |quantity|
+    def discount price, quantity
         if quantity >= @max_items
-          -(quantity - @max_items) * item_price * (@discount_percent / 100.0)
+          -(quantity - @max_items) * price * (@discount_percent / 100.0)
         else
           0
         end
-      end
     end
 
     def to_s
@@ -76,15 +72,23 @@ module Discount
       @discount_percent = discount_percent
     end
 
-    def get_lambda item_price
-      lambda do |quantity|
-        amount = quantity / @num_of_items
-        -amount * @num_of_items * item_price * (@discount_percent / 100.0)
-      end
+    def discount price, quantity
+      amount = quantity / @num_of_items
+      -amount * @num_of_items * price * (@discount_percent / 100.0)
     end
 
     def to_s
       "(get #{@discount_percent}% off for every #{@num_of_items})"
+    end
+  end
+
+  class NilDiscount
+    def discount price, quantity
+      0
+    end
+
+    def to_s
+      ''
     end
   end
 end
@@ -153,13 +157,13 @@ class Cart
   end
 
   def item_price name
-    (@inventory.item_price name) * @items[name]
+    @inventory.item_price name
   end
 
   def item_discount name
-    discount = @inventory.get_item_discount name
+    discount = @inventory.item_discount name
     if discount != nil
-      (@inventory.get_item_discount name).call(@items[name])
+      (@inventory.item_discount name).discount(item_price(name), @items[name])
     else
       0
     end
@@ -168,7 +172,7 @@ class Cart
   def total usecoupons=true
     result = '0'.to_d
     @items.each_key do |key|
-      result += item_price key
+      result += (item_price key) * @items[key]
       result += item_discount key
     end
     if usecoupons 
@@ -193,7 +197,7 @@ class Cart
     res = ""
     @items.each_key do |key|
       quantity = sprintf("%d", @items[key])
-      price = sprintf("%.2f", @inventory.item_price(key) * @items[key])
+      price = sprintf("%.2f", item_price(key) * @items[key])
       res << "| #{key.ljust 23}#{quantity.rjust 23} |#{price.rjust 9} |\n"
       res << invoice_for_discount(key)
     end
@@ -202,9 +206,9 @@ class Cart
 
   def invoice_for_discount name
     res = ""
-    discount_desc = @inventory.get_item_discount_string name
-    if discount_desc != nil
-      discount = @inventory.get_item_discount(name).call(@items[name])
+    discount_desc = @inventory.item_discount(name).to_s
+    if discount_desc != ''
+      discount = @inventory.item_discount(name).discount(item_price(name), @items[name])
       discount_string = sprintf('%.2f', discount)
       res << "|   #{discount_desc.ljust 44} |#{discount_string.rjust 9} |\n"
     end
@@ -253,14 +257,10 @@ class Inventory
     @items[name]
   end
 
-  def get_item_discount name
-    @discounts[name] != nil ? @discounts[name].get_lambda(item_price name) : nil
+  def item_discount name
+    @discounts[name]
   end
 
-  def get_item_discount_string name
-    @discounts[name] != nil ? @discounts[name].to_s : nil
-  end
-  
   def has_item? name
     @items[name] != nil
   end
