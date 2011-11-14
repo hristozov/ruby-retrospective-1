@@ -225,7 +225,9 @@ class InvoicePrinter
   end
 
   def print_discount item
-    print "  #{item.discount_name}", '', amount(item.discount) if item.discounted?
+    if item.discounted?
+      print "  #{item.discount_name}", '', amount(item.discount)
+    end
   end
 
   def print_total
