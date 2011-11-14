@@ -151,30 +151,28 @@ class InvoicePrinter
 
   def to_s
     @output = ""
-    print_header
+    print_separator
+    print 'Name', 'qty', 'price'
+    print_separator
     print_items
     print_total
   end
 
   private
-  def print_header
-    print_separator
-    print 'Name', 'qty', 'price'
-    print_separator
-  end
-
   def print_items
     @cart.items.each_key do |item|
       print item, @cart.items[item], amount(@cart.item_price(item) * @cart.items[item])
-      if @cart.item_discount(item).nonzero?
-        discount_price = @cart.item_discount(item)
-        print "  #{@cart.discount_name(item)}", '', amount(discount_price)
-      end
+      print_discount item
     end
 
     if @cart.coupon != nil 
       print @cart.coupon, '', amount(@cart.total - @cart.total(false))
     end
+  end
+
+  def print_discount item
+    discount_price = @cart.item_discount(item)
+    print "  #{@cart.discount_name(item)}", '', amount(discount_price) if discount_price.nonzero?
   end
 
   def print_total
@@ -192,7 +190,6 @@ class InvoicePrinter
   end
 
   def amount(decimal)
-    #"%5.2f" % decimal
     sprintf("%.2f", decimal)
   end
 end
