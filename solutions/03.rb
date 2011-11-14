@@ -114,7 +114,7 @@ module Coupon
     end
 
     def discount(total)
-      (@percent / '100.0'.to_d) * total
+      -(@percent / '100.0'.to_d) * total
     end
 
     def to_s
@@ -129,7 +129,7 @@ module Coupon
     end
 
     def discount(total)
-      [total, @amount].min
+      -[total, @amount].min
     end
     
     def to_s
@@ -141,6 +141,60 @@ module Coupon
     def discount(total)
       0
     end
+  end
+end
+
+class Product
+  attr_reader :name, :price, :discount
+
+  def initialize name, price, discount
+    raise "Invalid name passed" if name.length > 40
+    raise "Invalid price" unless price > 0 and price < 1000
+    @name = name
+    @price = price
+    @discount = discount
+  end
+end
+
+class LineItem
+  attr_reader :product
+  attr_accessor :quantity
+
+  def initialize(product, quantity)
+    @product = product
+    @quantity = 0
+
+    increase quantity
+  end
+
+  def increase(quantity)
+    raise 'Invalid number of items' if quantity <= 0
+    raise 'Invalid number of items' if quantity + @quantity > 99
+    @quantity += quantity
+  end
+
+  def product_name
+    @product.name
+  end
+
+  def discounted_price
+    price + discount
+  end
+
+  def price
+    product.price * quantity
+  end
+
+  def discount
+    product.discount.discount(product.price, quantity)
+  end
+
+  def discount_name
+    product.discount.to_s
+  end
+
+  def discounted?
+    not discount.zero?
   end
 end
 
@@ -160,19 +214,18 @@ class InvoicePrinter
 
   private
   def print_items
-    @cart.items.each_key do |item|
-      print item, @cart.items[item], amount(@cart.item_price(item) * @cart.items[item])
+    @cart.items.each do |item|
+      print item.product_name, item.quantity, amount(item.price)
       print_discount item
     end
 
-    if @cart.coupon != nil 
+    if not @cart.coupon.is_a?(Coupon::NilCoupon)
       print @cart.coupon, '', amount(@cart.total - @cart.total(false))
     end
   end
 
   def print_discount item
-    discount_price = @cart.item_discount(item)
-    print "  #{@cart.discount_name(item)}", '', amount(discount_price) if discount_price.nonzero?
+    print "  #{item.discount_name}", '', amount(item.discount) if item.discounted?
   end
 
   def print_total
@@ -199,39 +252,24 @@ class Cart
 
   def initialize inv
     @inventory = inv
-    @items = Hash.new(0)
+    @items = []
+    @coupon = Coupon::NilCoupon.new()
   end
 
   def add name, quantity=1
-    raise "Invalid item name" if not @inventory.has_item? name
-    @items[name] += quantity
-    raise "Invalid quantity" if quantity <= 0 or quantity > 99
-  end
-
-  def item_price name
-    @inventory.item_price name
-  end
-
-  def item_discount name
-    discount = @inventory.item_discount name
-    (@inventory.item_discount name).discount(item_price(name), @items[name])
-  end
-
-  def discount_name name
-    @inventory.item_discount(name).to_s
+    product = @inventory[name]
+    item = @items.find { |item| item.product == product } 
+    if item
+      item.quantity += quantity
+    else
+      @items << LineItem.new(product, quantity)
+    end
   end
 
   def total usecoupons=true
-    result = '0'.to_d
-    @items.each_key do |key|
-      result += (item_price key) * @items[key]
-      result += item_discount key
-    end
-    if usecoupons 
-      result -= @coupon.discount(result) if @coupon != nil
-      result = result < 0 ? 0 : result
-    end
-    result
+    items_price = @items.map(&:discounted_price).inject(&:+)
+    discount = @coupon.discount items_price
+    usecoupons ? items_price + discount : items_price
   end
 
   def invoice
@@ -239,7 +277,7 @@ class Cart
   end
 
   def use name
-    raise "Coupon already set!" if @coupon != nil
+    raise "Coupon already set!" if not @coupon.is_a?(Coupon::NilCoupon)
     @coupon = @inventory.get_coupon name
   end
 end
@@ -247,18 +285,16 @@ end
 class Inventory
   def initialize
     @items = {}
-    @discounts = {}
     @coupons = {}
   end
 
   def register name, price, discounts_hash = nil
-    numeric_price = price.to_d
-    raise "Invalid name passed" if name.length > 40
-    raise "Invalid price" if numeric_price < '0.01'.to_d\
-                          or numeric_price > '999.99'.to_d
-    raise "Item already registred" if @items[name] != nil
-    @items[name] = price.to_d
-    @discounts[name] = Discount.build discounts_hash
+    price = price.to_d
+    @items[name] = Product.new(name, price, Discount.build(discounts_hash))
+  end
+
+  def [](name)
+    @items[name] or raise 'No such product.'
   end
 
   def register_coupon name, value
@@ -266,19 +302,7 @@ class Inventory
   end
 
   def get_coupon name
-    @coupons[name]
-  end
-
-  def item_price name
-    @items[name]
-  end
-
-  def item_discount name
-    @discounts[name]
-  end
-
-  def has_item? name
-    @items[name] != nil
+    @coupons[name] or Coupon.NilCoupon.new
   end
 
   def new_cart
