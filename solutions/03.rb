@@ -99,54 +99,10 @@ class DiscountsFactory
   end
 end
 
-class BaseCoupon
-  def get_lambda
-    raise "This should be overriden!"
-  end
-
-  def to_s
-    raise "This should be overriden!"
-  end
-end
-
-class PercentCoupon < BaseCoupon
-  def initialize name, percent
-    @percent = percent
-    @name = name
-  end
-
-  def get_lambda
-    lambda do |total|
-      -total * (@percent / 100.0)
-    end
-  end
-
-  def to_s
-    "Coupon #{@name} - #{sprintf("%d", @percent)}% off"
-  end
-end
-
-class AmountCoupon < BaseCoupon
-  def initialize name, amount
-    @amount = amount
-    @name = name
-  end
-
-  def get_lambda
-    lambda do |total|
-      -@amount
-    end
-  end
-
-  def to_s
-    "Coupon #{@name} - #{sprintf("%.2f", @amount)} off"
-  end
-end
-
-class CouponFactory 
-  def self.get_coupon name, hash
+module Coupon
+  def self.build name, hash
     type = hash.to_a.flatten.first
-    value = hash.to_a.flatten.last
+    value = hash.to_a.flatten.last.to_s.to_d
     case type
     when :percent
       PercentCoupon.new(name, value)
@@ -154,6 +110,40 @@ class CouponFactory
       AmountCoupon.new(name, value)
     else
       nil
+    end
+  end
+
+  class PercentCoupon
+    def initialize name, percent
+      @percent = percent
+      @name = name
+    end
+
+    def get_lambda
+      lambda do |total|
+        -total * (@percent / 100.0)
+      end
+    end
+
+    def to_s
+      "Coupon #{@name} - #{sprintf("%d", @percent)}% off"
+    end
+  end
+
+  class AmountCoupon
+    def initialize name, amount
+      @amount = amount
+      @name = name
+    end
+
+    def get_lambda
+      lambda do |total|
+        -@amount
+      end
+    end
+
+    def to_s
+      "Coupon #{@name} - #{sprintf("%.2f", @amount)} off"
     end
   end
 end
@@ -252,15 +242,15 @@ class Inventory
   def register name, price, discounts_hash = nil
     numeric_price = price.to_d
     raise "Invalid name passed" if name.length > 40
-    raise "Invalid pricei" if numeric_price < '0.01'.to_d
-                           or numeric_price > '999.99'.to_d
+    raise "Invalid price" if numeric_price < '0.01'.to_d\
+                          or numeric_price > '999.99'.to_d
     raise "Item already registred" if @items[name] != nil
     @items[name] = price.to_d
     @discounts[name] = DiscountsFactory.get_discount discounts_hash 
   end
 
   def register_coupon name, value
-    @coupons[name] = CouponFactory.get_coupon(name, value)
+    @coupons[name] = Coupon.build(name, value)
   end
 
   def get_coupon name
