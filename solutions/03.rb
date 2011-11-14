@@ -252,7 +252,8 @@ class Inventory
   def register name, price, discounts_hash = nil
     numeric_price = price.to_d
     raise "Invalid name passed" if name.length > 40
-    raise "Invalid pricei" if numeric_price < '0.01'.to_d or numeric_price > '999.99'.to_d
+    raise "Invalid pricei" if numeric_price < '0.01'.to_d
+                           or numeric_price > '999.99'.to_d
     raise "Item already registred" if @items[name] != nil
     @items[name] = price.to_d
     @discounts[name] = DiscountsFactory.get_discount discounts_hash 
